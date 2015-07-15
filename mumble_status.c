@@ -42,21 +42,15 @@ void compose_mumble_ping(unsigned char *request,
  * Dissects a mumble ping according to the mumble protocol.
  */
 void dissect_mumble_ping(unsigned char *response,
-                         int *major,
-                         int *minor,
-                         int *patch,
-                         int *ident,
-                         int *users,
-                         int *maxusers,
-                         int *bitrate)
+                         struct mumble_response *mr)
 {
     /* Extract the version number from bits [1-3] (0 is useless) */
-    *major = response[1];
-    *minor = response[2];
-    *patch = response[3];
+    mr->version_major = response[1];
+    mr->version_minor = response[2];
+    mr->version_patch = response[3];
 
     /* Extract the timestamp that was sent from bytes [4-11] */
-    *ident = (int)(response[4]  << 7 |
+    mr->ident = (int)(response[4]  << 7 |
                    response[5]  << 6 |
                    response[6]  << 5 |
                    response[7]  << 4 |
@@ -67,18 +61,18 @@ void dissect_mumble_ping(unsigned char *response,
 
 
     /* Extract the bitrate from bytes [12-19] */
-    *users = (int)(response[12] << 24 |
+    mr->current_users = (int)(response[12] << 24 |
                    response[13] << 16 |
                    response[14] << 8  |
                    response[15] << 0);
 
-    *maxusers = (int)(response[16] << 24 |
+    mr->maximum_users = (int)(response[16] << 24 |
                       response[17] << 16 |
                       response[18] << 8  |
                       response[19] << 0);
 
     /* Extract the bitrate from bytes [20-23] */
-    *bitrate = (int)(response[20] << 24 |
+    mr->bitrate = (int)(response[20] << 24 |
                      response[21] << 16 |
                      response[22] << 8  |
                      response[23] << 0) / 1000;
@@ -152,23 +146,17 @@ int main(int argc, const char *argv[])
     close(sockfd);
 
     /* Split the received data according to the mumble protocol */
-    int version_major, version_minor, version_patch;
-    int inbound_ident;
-    int current_users, maximum_users, bitrate;
+    struct mumble_response mr;
+    dissect_mumble_ping(&rw_buffer[0], &mr);
 
-    dissect_mumble_ping(&rw_buffer[0],
-                        &version_major, &version_minor, &version_patch,
-                        &inbound_ident,
-                        &current_users, &maximum_users, &bitrate);
-
-    float ping_time = (clock() - inbound_ident);
+    float ping_time = (clock() - mr.ident);
 
     /* Print the split data */
     printf("Version %i.%i.%i, %i/%i Users, %3.1fms, %ikbit/s\n",
-           version_major, version_minor, version_patch,
-           current_users, maximum_users,
+           mr.version_major, mr.version_minor, mr.version_patch,
+           mr.current_users, mr.maximum_users,
            ping_time,
-           (int) bitrate);
+           (int) mr.bitrate);
 
     /* Exit */
     return 0;
