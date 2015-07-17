@@ -1,17 +1,12 @@
-/* Standard library */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <strings.h>
+#include <string.h>
 #include <time.h>
 
-/* Types */
+/* Network headers */
 #include <sys/types.h>
-
-/* Sockets */
 #include <sys/socket.h>
-
-/* Some structs for ports and adresses */
 #include <netinet/in.h>
 #include <netdb.h>
 
@@ -21,19 +16,20 @@
  * Composes a mumble ping according to the mumble protocol.
  */
 void compose_mumble_ping(unsigned char *request,
+                         int request_length,
                          int outbound_ident)
 {
     /* Clear out the rw_buffer */
-    bzero(request, BUF_SIZE);
+    memset(request, 0, request_length);
 
     /* Denotes the request type  */
-    for (int i = 0; i < RQ_TYPE_BYTES; i++) {
+    for (int i = 0; i < 4; i++) {
         request[i] = 0;
     }
 
     /* Used to identify the reponse */
-    for (int i = RQ_TYPE_BYTES; i < RQ_TYPE_BYTES + ID_BYTES; i++) {
-        request[i] = outbound_ident >> ((RQ_TYPE_BYTES + ID_BYTES - 1) - i);
+    for (int i = 4; i < 4 + 8; i++) {
+        request[i] = outbound_ident >> ((4 + 8 - 1) - i);
     }
 
 }
@@ -51,31 +47,31 @@ void dissect_mumble_ping(unsigned char *response,
 
     /* Extract the timestamp that was sent from bytes [4-11] */
     mr->ident = (int)(response[4]  << 7 |
-                   response[5]  << 6 |
-                   response[6]  << 5 |
-                   response[7]  << 4 |
-                   response[8]  << 3 |
-                   response[9]  << 2 |
-                   response[10] << 1 |
-                   response[11] << 0);
+                      response[5]  << 6 |
+                      response[6]  << 5 |
+                      response[7]  << 4 |
+                      response[8]  << 3 |
+                      response[9]  << 2 |
+                      response[10] << 1 |
+                      response[11] << 0);
 
 
-    /* Extract the bitrate from bytes [12-19] */
+    /* Extract the current and max users from bytes [12-19] */
     mr->current_users = (int)(response[12] << 24 |
-                   response[13] << 16 |
-                   response[14] << 8  |
-                   response[15] << 0);
+                              response[13] << 16 |
+                              response[14] << 8  |
+                              response[15] << 0);
 
     mr->maximum_users = (int)(response[16] << 24 |
-                      response[17] << 16 |
-                      response[18] << 8  |
-                      response[19] << 0);
+                              response[17] << 16 |
+                              response[18] << 8  |
+                              response[19] << 0);
 
     /* Extract the bitrate from bytes [20-23] */
     mr->bitrate = (int)(response[20] << 24 |
-                     response[21] << 16 |
-                     response[22] << 8  |
-                     response[23] << 0) / 1000;
+                        response[21] << 16 |
+                        response[22] << 8  |
+                        response[23] << 0) / 1000;
 
 }
 
@@ -105,40 +101,53 @@ int main(int argc, const char *argv[])
         return -1;
     }
 
-    /* Set up server info */
-    struct hostent *server = gethostbyname(argv[1]);
+    /* Get server info */
+    struct hostent *server = gethostbyname(argv[1]); /* TODO fix on windows by replacing with getaddrinfo */
+
+    if (server == NULL) {
+        printf("Error getting host info\n");
+        return -1;
+    }
+
     int portno = atoi(argv[2]);
 
+    /* Create and fill a sockaddr_in struct */
     struct sockaddr_in serv_addr;
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    bcopy((char *) server->h_addr_list[0],
-          (char *) &serv_addr.sin_addr.s_addr,
-          server->h_length);
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    memcpy((char *) &serv_addr.sin_addr.s_addr,
+           (char *) server->h_addr_list[0],
+           server->h_length);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(portno);
 
-    /* Connect to the server */
-    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    /* Create socket */
+    int sockfd;
 
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        printf("Error creating socket\n");
+        return -1;
+    }
+
+    /* Connect to the server */
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         printf("Error connecting\n");
         return -1;
     }
 
     /* Compose a ping according to the mumble protocol */
-    compose_mumble_ping(&rw_buffer[0], clock());
+    compose_mumble_ping(rw_buffer, BUF_SIZE, clock());
 
     /* Send data */
-    if ((n = write(sockfd, rw_buffer, RQ_TYPE_BYTES + ID_BYTES)) < 0) {
+    if ((n = write(sockfd, rw_buffer, 12)) < 0) {
         printf("Error writing to socket\n");
         return -1;
     }
 
     /* Receive data */
-    bzero(rw_buffer, BUF_SIZE);
+    memset(rw_buffer, 0, BUF_SIZE);
 
-    if ((n = read(sockfd, rw_buffer, 255)) < 0) {
-        printf("Error reading from socket\n");
+    if ((n = read(sockfd, rw_buffer, BUF_SIZE)) < 0) {
+        printf("Error reading from socket: %i\n", n);
         return -1;
     }
 
@@ -147,7 +156,7 @@ int main(int argc, const char *argv[])
 
     /* Split the received data according to the mumble protocol */
     struct mumble_response mr;
-    dissect_mumble_ping(&rw_buffer[0], &mr);
+    dissect_mumble_ping(rw_buffer, &mr);
 
     float ping_time = (clock() - mr.ident);
 

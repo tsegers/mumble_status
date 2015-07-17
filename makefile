@@ -31,13 +31,16 @@ compile: $(TARGET) clean
 doc: clean
 	doxygen Doxyfile
 
-# Run
-run: compile
-	./$(TARGET)
-
 # Clean
 clean:
 	rm -f $(OBJECTS)
+
+install: compile
+	cp ./$(TARGET) /usr/bin
+
+uninstall:
+	rm /usr/bin/$(TARGET)
+
 
 # Options
 options:
