@@ -7,7 +7,6 @@
 /* Network headers */
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <netdb.h>
 
 #include "mumble_status.h"
@@ -35,9 +34,9 @@ void compose_mumble_ping(unsigned char *request,
 }
 
 /**
- * Dissects a mumble ping according to the mumble protocol.
+ * Dissects a mumble pong according to the mumble protocol.
  */
-void dissect_mumble_ping(unsigned char *response,
+void dissect_mumble_pong(unsigned char *response,
                          struct mumble_response *mr)
 {
     /* Extract the version number from bits [1-3] (0 is useless) */
@@ -88,8 +87,11 @@ void dissect_mumble_ping(unsigned char *response,
  */
 int main(int argc, const char *argv[])
 {
-    /* read() and write() status variable */
-    int n = 0;
+    int sockfd;                         /* Socket file descriptor */
+    struct addrinfo hints;              /* Hints argument of getaddrinfo() */
+    struct addrinfo *getaddr_result;    /* getaddr_result of getaddrinfo() */
+    struct addrinfo *serv_addr;         /* Temp copy of getaddr_result to iterate over */
+    int n;                              /* Used to store the return value of getaddrinfo(), read() and write() */
 
     /* Buffer to save the outbound and inbound traffic */
     unsigned char rw_buffer[BUF_SIZE] = {0};
@@ -101,49 +103,47 @@ int main(int argc, const char *argv[])
         return -1;
     }
 
-    /* Get server info */
-    struct hostent *server = gethostbyname(argv[1]); /* TODO fix on windows by replacing with getaddrinfo */
+    /* Obtain address(es) matching host/port */
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
 
-    if (server == NULL) {
+    /* Look up the address info */
+    if ((n = getaddrinfo(argv[1], argv[2], &hints, &getaddr_result)) != 0) {
         printf("Error getting host info\n");
         return -1;
     }
 
-    int portno = atoi(argv[2]);
+    /* Try each address until we can connect  */
+    for (serv_addr = getaddr_result; serv_addr != NULL; serv_addr = serv_addr->ai_next) {
+        sockfd = socket(serv_addr->ai_family, serv_addr->ai_socktype, serv_addr->ai_protocol);
 
-    /* Create and fill a sockaddr_in struct */
-    struct sockaddr_in serv_addr;
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    memcpy((char *) &serv_addr.sin_addr.s_addr,
-           (char *) server->h_addr_list[0],
-           server->h_length);
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(portno);
-
-    /* Create socket */
-    int sockfd;
-
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        printf("Error creating socket\n");
-        return -1;
+        if (sockfd != -1) {
+            if (connect(sockfd, serv_addr->ai_addr, serv_addr->ai_addrlen) != -1) {
+                break;
+            } else {
+                close(sockfd);
+            }
+        }
     }
 
-    /* Connect to the server */
-    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+    if (serv_addr == NULL) {
         printf("Error connecting\n");
         return -1;
     }
 
+    freeaddrinfo(getaddr_result);
+
     /* Compose a ping according to the mumble protocol */
     compose_mumble_ping(rw_buffer, BUF_SIZE, clock());
 
-    /* Send data */
+    /* Send ping */
     if ((n = write(sockfd, rw_buffer, 12)) < 0) {
         printf("Error writing to socket\n");
         return -1;
     }
 
-    /* Receive data */
+    /* Receive pong */
     memset(rw_buffer, 0, BUF_SIZE);
 
     if ((n = read(sockfd, rw_buffer, BUF_SIZE)) < 0) {
@@ -151,12 +151,9 @@ int main(int argc, const char *argv[])
         return -1;
     }
 
-    /* Close the connection */
-    close(sockfd);
-
     /* Split the received data according to the mumble protocol */
     struct mumble_response mr;
-    dissect_mumble_ping(rw_buffer, &mr);
+    dissect_mumble_pong(rw_buffer, &mr);
 
     float ping_time = (clock() - mr.ident);
 

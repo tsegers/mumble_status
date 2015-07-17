@@ -18,7 +18,7 @@ struct mumble_response {
 void dissect_mumble_ping(unsigned char *response,
                          struct mumble_response *mr);
 
-void compose_mumble_ping(unsigned char *request,
+void compose_mumble_pong(unsigned char *request,
                          int request_length,
                          int outbound_ident);
 

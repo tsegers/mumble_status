@@ -8,7 +8,7 @@ SHELL = /bin/sh
 CC = gcc
 
 # Flags
-FLAGS   		= -std=c99 $(INCLUDE_DIRS)
+FLAGS   		= -std=gnu99 $(INCLUDE_DIRS)
 CFLAGS 			= -W -g -O2
 LDFLAGS 		=
 LIBS 			=
