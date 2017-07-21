@@ -22,7 +22,7 @@ MANUAL = readme.md
 EXTRA_DIST = 
 
 # Default
-default: compile
+default: clean compile
 
 # Compile
 compile: $(TARGET) clean
@@ -55,11 +55,11 @@ options:
 
 # Target
 $(TARGET): $(OBJECTS) 
-	$(CC) $(FLAGS) $(CFLAGS) $(LDFLAGS) -o $(TARGET) $(OBJECTS)
+	$(CC) $(FLAGS) $(CFLAGS) -o $(TARGET) $(OBJECTS) $(LDFLAGS)
 
 # Objects
 %.o: %.c $(HEADERS)
-	$(CC) $(FLAGS) $(CFLAGS) $(LDFLAGS) -c -o $@ $<
+	$(CC) $(FLAGS) $(CFLAGS) -c -o $@ $< $(LDFLAGS)
 
 
 
